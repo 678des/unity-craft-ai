@@ -1,0 +1,112 @@
+import { inngest } from "./client";
+import { getAdminClient } from "@/lib/supabase/admin";
+import { planProject, generateScript } from "@/lib/gemini";
+import { createRepoAndPush } from "@/lib/github";
+import type { GeneratedFile, ProjectPlan, ProjectStatus } from "@/lib/types";
+
+async function setStatus(
+  projectId: string,
+  status: ProjectStatus,
+  extra: Record<string, unknown> = {}
+) {
+  const { error } = await getAdminClient()
+    .from("projects")
+    .update({ status, ...extra })
+    .eq("id", projectId);
+  if (error) throw new Error(`ステータス更新に失敗: ${error.message}`);
+}
+
+async function addLog(projectId: string, stepName: string, message: string) {
+  const { error } = await getAdminClient()
+    .from("agent_logs")
+    .insert({ project_id: projectId, step_name: stepName, log_message: message });
+  if (error) console.error("agent_logs insert failed:", error.message);
+}
+
+export const generateUnityProject = inngest.createFunction(
+  {
+    id: "generate-unity-project",
+    retries: 3,
+    onFailure: async ({ event, error }) => {
+      const projectId = (event.data.event.data as { projectId: string }).projectId;
+      await setStatus(projectId, "failed", { error_message: error.message });
+      await addLog(projectId, "error", `失敗しました: ${error.message}`);
+    },
+  },
+  { event: "project/create" },
+  async ({ event, step }) => {
+    const { projectId } = event.data as { projectId: string };
+
+    // Step 1: ログ初期化 & status -> planning
+    const userPrompt = await step.run("init", async () => {
+      const { data, error } = await getAdminClient()
+        .from("projects")
+        .select("prompt")
+        .eq("id", projectId)
+        .single();
+      if (error || !data) throw new Error("プロジェクトが見つかりません。");
+      await setStatus(projectId, "planning");
+      await addLog(projectId, "init", "ジョブを開始しました。");
+      return data.prompt as string;
+    });
+
+    // Step 2: Gemini でファイル構成を計画
+    const plan: ProjectPlan = await step.run("plan", async () => {
+      await addLog(projectId, "planning", "必要なスクリプトを検討しています...");
+      const result = await planProject(userPrompt);
+      await addLog(
+        projectId,
+        "planning",
+        `${result.files.length}個のスクリプトを計画しました: ` +
+          result.files.map((f) => f.path.split("/").pop()).join(", ")
+      );
+      return result;
+    });
+
+    // Step 3: status -> generating
+    await step.run("status-generating", () => setStatus(projectId, "generating"));
+
+    // Step 4: 1ファイルずつコード生成(無料枠のレート制限に配慮して逐次実行)
+    const generated: GeneratedFile[] = [];
+    for (const [i, file] of plan.files.entries()) {
+      const content = await step.run(`generate-${i}`, async () => {
+        await addLog(
+          projectId,
+          "generating",
+          `(${i + 1}/${plan.files.length}) ${file.path} を生成しています...`
+        );
+        return generateScript(userPrompt, plan, file);
+      });
+      generated.push({ path: file.path, content });
+    }
+
+    // Step 5: status -> pushing(プレビュー用に生成物もDBへ保存)
+    await step.run("status-pushing", async () => {
+      await setStatus(projectId, "pushing", { generated_files: generated });
+      await addLog(projectId, "pushing", "GitHubリポジトリを作成してpushします...");
+    });
+
+    // Step 6: GitHub にリポジトリ作成 & push
+    const repo = await step.run("push-to-github", async () => {
+      const result = await createRepoAndPush({
+        repoName: plan.repo_name,
+        description: `Unity scripts generated from: ${userPrompt.replace(/\s+/g, " ")}`,
+        projectId,
+        files: generated,
+      });
+      await addLog(projectId, "pushing", `push完了: ${result.url}`);
+      return result;
+    });
+
+    // Step 7: status -> completed
+    await step.run("complete", async () => {
+      await setStatus(projectId, "completed", {
+        github_repo_name: repo.name,
+        github_repo_url: repo.url,
+      });
+      await addLog(projectId, "completed", "すべての処理が完了しました。");
+    });
+
+    return { projectId, repoUrl: repo.url };
+  }
+);
