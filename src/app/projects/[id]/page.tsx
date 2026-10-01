@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { ExternalLink, FileCode2 } from "lucide-react";
+
+import { useRouter } from "next/navigation";
+import { ExternalLink, FileCode2, Loader2, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import type { AgentLog, Project } from "@/lib/types";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const TERMINAL = ["completed", "failed"];
 
@@ -31,6 +34,12 @@ export default function ProjectPage() {
   const [logs, setLogs] = useState<AgentLog[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [activeFile, setActiveFile] = useState(0);
+
+  const router = useRouter();
+  const [prompt, setPrompt] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const consoleRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -98,6 +107,25 @@ export default function ProjectPage() {
 
   const files = useMemo(() => project?.generated_files ?? [], [project]);
 
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/continue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "送信に失敗しました。");
+      router.push(`/projects/${data.id}`);
+      //router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "送信に失敗しました。");
+      setSubmitting(false);
+    }
+  }
+
   if (notFound) {
     return (
       <p className="text-muted">このプロジェクトは見つかりませんでした。</p>
@@ -119,6 +147,15 @@ export default function ProjectPage() {
           {project.prompt}
         </p>
       </div>
+
+      <Button size="lg" onClick={submit} disabled={submitting}>
+        {submitting ? (
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+        ) : (
+          <Sparkles className="h-5 w-5" aria-hidden />
+        )}
+        {submitting ? "送信中..." : "続きを作る"}
+      </Button>
 
       {project.status === "failed" && project.error_message && (
         <div
