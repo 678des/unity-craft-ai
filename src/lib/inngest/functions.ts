@@ -1,7 +1,7 @@
 import { inngest } from "./client";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { planProject, generateScript, generateReadme } from "@/lib/gemini";
-import { createRepoAndPush } from "@/lib/github";
+import { createRepoAndPush } from "@/lib/github/createRepo";
 import type { GeneratedFile, ProjectPlan, ProjectStatus } from "@/lib/types";
 
 async function setStatus(

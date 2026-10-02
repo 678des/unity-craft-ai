@@ -1,5 +1,5 @@
 import { Octokit } from "@octokit/rest";
-import type { GeneratedFile } from "./types";
+import type { GeneratedFile } from "../types";
 
 interface PushParams {
   repoName: string;
@@ -22,7 +22,9 @@ export async function createRepoAndPush({
   projectId,
   files,
 }: PushParams): Promise<{ name: string; url: string }> {
-  const octokit = new Octokit({ auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN });
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN,
+  });
   const { data: me } = await octokit.rest.users.getAuthenticated();
   const owner = me.login;
   const marker = `[unitycraft:${projectId}]`;
@@ -30,7 +32,8 @@ export async function createRepoAndPush({
 
   // 1. リポジトリの確保(既存なら自分の作ったものだけ再利用)
   const candidates = [repoName, `${repoName}-${projectId.slice(0, 6)}`];
-  let repo: { name: string; html_url: string; default_branch: string } | null = null;
+  let repo: { name: string; html_url: string; default_branch: string } | null =
+    null;
 
   for (const name of candidates) {
     try {
@@ -96,8 +99,13 @@ export async function createRepoAndPush({
         content: f.content,
         encoding: "utf-8",
       });
-      return { path: f.path, mode: "100644" as const, type: "blob" as const, sha: data.sha };
-    })
+      return {
+        path: f.path,
+        mode: "100644" as const,
+        type: "blob" as const,
+        sha: data.sha,
+      };
+    }),
   );
 
   const { data: newTree } = await octokit.rest.git.createTree({

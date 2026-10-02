@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Octokit } from "@octokit/rest";
 import { GoogleGenAI } from "@google/genai";
 import { getProjectById } from "@/lib/supabase/projects";
-import { createRepoAndPush } from "@/lib/github";
+import { createRepoAndPush } from "@/lib/github/createRepo";
 import { env } from "process";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
