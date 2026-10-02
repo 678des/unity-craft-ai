@@ -72,7 +72,7 @@ Rules:
       (f: any): f is PlannedFile =>
         typeof f?.path === "string" &&
         typeof f?.description === "string" &&
-        isSafeScriptPath(f.path)
+        isSafeScriptPath(f.path),
     )
     .slice(0, 8);
 
@@ -90,9 +90,11 @@ Rules:
 export async function generateScript(
   userPrompt: string,
   plan: ProjectPlan,
-  file: PlannedFile
+  file: PlannedFile,
 ): Promise<string> {
-  const outline = plan.files.map((f) => `- ${f.path}: ${f.description}`).join("\n");
+  const outline = plan.files
+    .map((f) => `- ${f.path}: ${f.description}`)
+    .join("\n");
 
   const res = await client().models.generateContent({
     model: MODEL,
@@ -115,7 +117,7 @@ Requirements:
 - Never call GetComponent/Find in Update(); cache references in Awake()/Start().
 - Prefer memory-efficient patterns (no per-frame allocations, avoid LINQ in hot paths).
 - Add concise XML doc comments and inline comments in the same language as the game request.
-- Target Unity 2021 LTS or later.`,
+- Target Unity 6 (Unity 6000) or later. Use modern C# features supported by Unity 6 if appropriate.`,
     config: { temperature: 0.2 },
   });
 
