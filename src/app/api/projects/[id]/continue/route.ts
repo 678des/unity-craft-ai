@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
 import { Octokit } from "@octokit/rest";
-import { GoogleGenAI } from "@google/genai"; // または既存のGemini SDKのインポートに合わせてください
-
-// Supabaseなどを利用して、プロジェクトIDから「GitHubのリポジトリ名」や「前回のプロンプト」を引いてくるイメージ
-// 今回はプレースホルダーとして関数を用意しています
-import { getProjectById } from "@/lib/supabase/projects"; // 既存のSupabaseクライアントを利用してプロジェクト情報を取得する関数
-
-// 既存のpush関数を再利用（または別ファイルからインポート）
+import { GoogleGenAI } from "@google/genai";
+import { getProjectById } from "@/lib/supabase/projects";
 import { createRepoAndPush } from "@/lib/github";
+import { env } from "process";
 
-// Google Gen AI SDKの初期化
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export async function POST(
@@ -19,11 +14,10 @@ export async function POST(
   try {
     const projectId = await (await params).id;
 
-    // 1. DBからプロジェクト情報を取得（リポジトリ名などを特定するため）
     const project = await getProjectById(projectId);
-    if (!project) {
+    if (!project || !project.github_repo_name) {
       return NextResponse.json(
-        { error: "プロジェクトが見つかりません" },
+        { error: "プロジェクトまたはGitHubリポジトリが見つかりません" },
         { status: 404 },
       );
     }
@@ -33,18 +27,22 @@ export async function POST(
     });
     const { data: me } = await octokit.rest.users.getAuthenticated();
     const owner = me.login;
-    const repoName = project.github_repo_name; // 保存されているリポジトリ名
+    const repoName = project.github_repo_name;
 
-    // 2. GitHubから現在のリポジトリの全ファイルを再帰的に取得する
-    // まずデフォルトブランチの最新コミットSHAを取得
+    // リポジトリのデフォルトブランチを動的に取得するとより安全です
+    const { data: repoInfo } = await octokit.rest.repos.get({
+      owner,
+      repo: repoName,
+    });
+    const defaultBranch = repoInfo.default_branch || "main";
+
     const { data: refData } = await octokit.rest.git.getRef({
       owner,
       repo: repoName,
-      ref: `heads/main`,
+      ref: `heads/${defaultBranch}`,
     });
     const commitSha = refData.object.sha;
 
-    // recursive: "true" でフォルダ階層丸ごとファイル一覧を取得
     const { data: treeData } = await octokit.rest.git.getTree({
       owner,
       repo: repoName,
@@ -52,18 +50,24 @@ export async function POST(
       recursive: "true",
     });
 
-    // 3. 各ファイルのBlobから中身（ソースコードのテキスト）を回収する
     const existingFiles: { path: string; content: string }[] = [];
 
     for (const item of treeData.tree) {
-      // ファイル（blob）かつ、不要なファイル（.gitignoreやREADMEなど）を除外したい場合はここで調整
+      // 拡張子が .cs や .md などのテキストファイルのみを回収対象にする（バイナリ除外）
       if (item.type === "blob" && item.sha && item.path) {
+        // 必要に応じて .meta ファイルなどをスキップしてもOK
+
+        const isCsScript = item.path.endsWith(".cs");
+        const isMarkdown = item.path.endsWith(".md");
+        if (!isCsScript && !isMarkdown) {
+          continue;
+        }
+
         const { data: blobData } = await octokit.rest.git.getBlob({
           owner,
           repo: repoName,
           file_sha: item.sha,
         });
-        // Base64デコード
         const content = Buffer.from(blobData.content, "base64").toString(
           "utf-8",
         );
@@ -71,38 +75,41 @@ export async function POST(
       }
     }
 
-    // 4. Geminiに現在のコードを見せて「次の拡張・修正コード」を考えてもらう
     const codeContext = existingFiles
       .map((f) => `--- File: ${f.path} ---\n${f.content}`)
       .join("\n\n");
 
+    console.log("Existing codebase context for gemini:", codeContext);
+
     const prompt = `
-あなたは優秀なUnity/C#エンジニアです。
-以下の既存のUnityプロジェクトのコードベースを読み込み、さらにゲームをリッチにするための新しいC#スクリプト（または既存の改良版）を1〜2個作成してください。
+    You are an expert Unity/C# engineer.
+    Read the existing Unity project codebase below and create new C# scripts to enrich the game, or provide improved versions of existing scripts.
 
-【現在のプロジェクトのコード】
-${codeContext}
+    [Current Project Codebase]
+    ${codeContext}
 
-【指示】
-- Unityでそのまま使えるC#スクリプトを出力してください。
-- 出力はJSON形式で返してください。
+    [Instructions]
+    - Target Unity 6 (Unity 6000) or later.
+    - Accurately understand existing class names, method names, and public API signatures, and integrate new code without naming discrepancies (typos or mismatches).
+    - Output in JSON array format, including new or modified files (specify the same file path if overwriting an existing file).
+    - The output must be a pure JSON array only.
 
-【絶対厳守のルール】
-1. 出力は必ず、構文エラーのない**純粋なJSON配列のみ**にしてください。
-2. Markdownのコードブロック（\`\`\`json など）や、前後の挨拶・解説は**一切出力しないでください**。
-3. "content" プロジェクトの値（C#コード）の中にある改行やタブは、必ずエスケープ文字（\\n や \\t）として記述し、**JSONの構文規則に違反する生の改行を含めないでください**。
-【出力フォーマット例】
-[
-  {
-    "path": "Assets/Scripts/NewFeature.cs",
-    "content": "using UnityEngine;\\n\\npublic class NewFeature : MonoBehaviour\\n{\\n    void Start() {}\\n}"
-  }
-]
+    [Strict Rules]
+    1. The output MUST be a valid, syntax-error-free **pure JSON array only**.
+    2. Do NOT output Markdown code blocks (such as \`\`\`json) or any greetings/explanations before or after.
+    3. Newlines and tabs inside the "content" field values (C# code) must be escaped as \\n or \\t. **Do NOT include raw unescaped newlines that violate JSON syntax rules.**
 
-`;
+    [Output Format Example]
+    [
+      {
+        "path": "Assets/Scripts/PlayerController.cs",
+        "content": "using UnityEngine;\\n\\npublic class PlayerController : MonoBehaviour\\n{\\n    void Start() {}\\n}"
+      }
+    ]
+    `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash-lite", // またはお使いのモデル
+      model: env.GEMINI_MODEL || "gemini-2.5-flash", // プロジェクトに合わせて変更してください
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -110,30 +117,27 @@ ${codeContext}
     });
 
     let responseText = response.text;
-
     responseText = responseText
       ?.replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
       .trim();
+
     if (!responseText) {
       throw new Error("Geminiからの応答が空でした。");
     }
 
-    console.log("Gemini response:", responseText);
-
     const newFiles = JSON.parse(responseText);
 
-    // 5. 生成された新しいファイルをGitHubにプッシュする
     await createRepoAndPush({
       repoName,
-      description: `Update by UnityCraft AI - Continue execution`,
+      description: `Update by UnityCraft AI - Continue execution with codebase context`,
       projectId,
       files: newFiles,
     });
 
     return NextResponse.json({
       success: true,
-      message: "AIによる続きの実装とプッシュが完了しました！",
+      message: "既存コードを考慮したAIによる実装とプッシュが完了しました！",
     });
   } catch (error: any) {
     console.error("Continue execution error:", error);
