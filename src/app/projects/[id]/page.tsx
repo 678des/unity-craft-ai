@@ -118,11 +118,33 @@ export default function ProjectPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "送信に失敗しました。");
-      router.push(`/projects/${data.id}`);
+      router.push(`/projects/${id}`);
       //router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "送信に失敗しました。");
       setSubmitting(false);
+    }
+  }
+  async function updateManifest() {
+    // TODO: owner, repoをSupabaseから取得するようにする
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/update-manifest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner: process.env.GITHUB_OWNER || "678des",
+          repo: project?.github_repo_name,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.error ?? "マニフェスト更新に失敗しました。");
+      console.log("Manifest updated:", data.manifest);
+      router.push(`/projects/${id}`);
+    } catch (e) {
+      console.error("Manifest update failed:", e);
     }
   }
 
@@ -155,6 +177,14 @@ export default function ProjectPage() {
           <Sparkles className="h-5 w-5" aria-hidden />
         )}
         {submitting ? "送信中..." : "続きを作る"}
+      </Button>
+      <Button size="lg" onClick={updateManifest} disabled={submitting}>
+        {submitting ? (
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+        ) : (
+          <Sparkles className="h-5 w-5" aria-hidden />
+        )}
+        {submitting ? "送信中..." : "マニフェストを更新"}
       </Button>
 
       {project.status === "failed" && project.error_message && (
