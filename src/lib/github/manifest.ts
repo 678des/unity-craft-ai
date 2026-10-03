@@ -88,18 +88,20 @@ export async function updateManifest(request: Request) {
     );
 
     // 3. Geminiに読み込ませて、最新の project-manifest.json を生成させる
+    // 3. Geminiに読み込ませて、最新の project-manifest.json を生成させる
     const prompt = `
 you are an expert Unity/C# engineer. You are given the contents of all C# scripts in a Unity project. Your task is to analyze these scripts and generate a comprehensive project-manifest.json that accurately reflects the current state of the project.
 【scriptsData】
 ${JSON.stringify(scriptsData, null, 2)}
 
-【expected output schema】
+【expected output schema (JSON format)】
 - projectName (string)
-- unityVersion (string: "6000.0.x")
+- unityVersion (string: e.g. "6000.0.f1")
 - description (string)
-- scenes (array of path & objects)
-- scripts (array: path, responsibility, public_methodsの配列, dependenciesの配列)
-- updatedAt (ISO 8601 string).
+- scenes (array of objects: { sceneName: string, path: string, description: string, keyObjects: string[] })
+- scripts (array of objects: { path: string, responsibility: string, public_methods: string[], dependencies: string[] })
+- humanSetupInstructions (array of strings: 手動セットアップやPrefab配置の指示)
+- updatedAt (ISO 8601 string)
     `;
 
     const response = await ai.models.generateContent({
@@ -118,11 +120,12 @@ ${JSON.stringify(scriptsData, null, 2)}
     newManifest.updatedAt = new Date().toISOString();
 
     // 4. GitHub上の project-manifest.json を更新（既存のSHAを取得して上書き）
+    // 4. GitHub上の project-manifest.json を更新（既存のSHAを取得して上書き）
     const currentFile = await octokit.repos
       .getContent({
         owner,
         repo,
-        path: "manifest.json",
+        path: "project-manifest.json", // ← 変更
       })
       .catch(() => null);
 
@@ -134,15 +137,14 @@ ${JSON.stringify(scriptsData, null, 2)}
     await octokit.repos.createOrUpdateFileContents({
       owner,
       repo,
-      path: "manifest.json",
-      message: "chore: sync manifest.json from repository codebase",
+      path: "project-manifest.json", // ← 変更
+      message: "chore: sync project-manifest.json from repository codebase",
       content: Buffer.from(JSON.stringify(newManifest, null, 2)).toString(
         "base64",
       ),
       sha,
       branch: "main",
     });
-
     return NextResponse.json({ success: true, manifest: newManifest });
   } catch (error: any) {
     console.error("Manifest sync failed:", error);

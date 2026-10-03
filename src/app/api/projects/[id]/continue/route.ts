@@ -12,9 +12,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const projectId = await (await params).id;
+    const { id: projectId } = await params;
+    const { userPrompt } = await request.json(); // ユーザーからの追加・修正の要望
 
-    const project = await getProjectById(projectId);
+    const project = await getProjectById(projectId); // 既存のプロジェクト取得関数
     if (!project || !project.github_repo_name) {
       return NextResponse.json(
         { error: "プロジェクトまたはGitHubリポジトリが見つかりません" },
@@ -29,88 +30,67 @@ export async function POST(
     const owner = me.login;
     const repoName = project.github_repo_name;
 
-    // リポジトリのデフォルトブランチを動的に取得するとより安全です
     const { data: repoInfo } = await octokit.rest.repos.get({
       owner,
       repo: repoName,
     });
     const defaultBranch = repoInfo.default_branch || "main";
 
-    const { data: refData } = await octokit.rest.git.getRef({
-      owner,
-      repo: repoName,
-      ref: `heads/${defaultBranch}`,
-    });
-    const commitSha = refData.object.sha;
-
-    const { data: treeData } = await octokit.rest.git.getTree({
-      owner,
-      repo: repoName,
-      tree_sha: commitSha,
-      recursive: "true",
-    });
-
-    const existingFiles: { path: string; content: string }[] = [];
-
-    for (const item of treeData.tree) {
-      // 拡張子が .cs や .md などのテキストファイルのみを回収対象にする（バイナリ除外）
-      if (item.type === "blob" && item.sha && item.path) {
-        // 必要に応じて .meta ファイルなどをスキップしてもOK
-
-        const isCsScript = item.path.endsWith(".cs");
-        const isMarkdown = item.path.endsWith(".md");
-        if (!isCsScript && !isMarkdown) {
-          continue;
-        }
-
-        const { data: blobData } = await octokit.rest.git.getBlob({
-          owner,
-          repo: repoName,
-          file_sha: item.sha,
-        });
-        const content = Buffer.from(blobData.content, "base64").toString(
+    // 1. リポジトリから現在の "project-manifest.json" を取得する
+    let manifestContent = "";
+    try {
+      const { data: manifestFile } = await octokit.rest.repos.getContent({
+        owner,
+        repo: repoName,
+        path: "project-manifest.json",
+        ref: defaultBranch,
+      });
+      if ("content" in manifestFile) {
+        manifestContent = Buffer.from(manifestFile.content, "base64").toString(
           "utf-8",
         );
-        existingFiles.push({ path: item.path, content });
       }
+    } catch (e) {
+      // マニフェストがまだない場合のフォールバック
+      manifestContent = "{}";
     }
 
-    const codeContext = existingFiles
-      .map((f) => `--- File: ${f.path} ---\n${f.content}`)
-      .join("\n\n");
+    // 2. プランナーAI用のシステムプロンプト
+    const plannerPrompt = `
+You are an expert Unity/C# Software Architect & Planner.
+Your job is to analyze the current project architecture (via project-manifest.json) and the user's new request, then output a precise change plan.
 
-    console.log("Existing codebase context for gemini:", codeContext);
+[Current project-manifest.json]
+${manifestContent}
 
-    const prompt = `
-    You are an expert Unity/C# engineer.
-    Read the existing Unity project codebase below and create new C# scripts to enrich the game, or provide improved versions of existing scripts.
+[User Request for Extension / Modification]
+${userPrompt}
 
-    [Current Project Codebase]
-    ${codeContext}
+[Instructions]
+1. Do NOT write actual C# code yet. Your output must be a structural change plan.
+2. Determine which files need to be modified or newly created.
+3. Keep track of existing method signatures and dependencies so that no naming mismatches occur.
+4. Output must be a valid, syntax-error-free **pure JSON object only** following the schema below.
+5. Do NOT output Markdown code blocks (like \`\`\`json) or any extra text.
 
-    [Instructions]
-    - Target Unity 6 (Unity 6000) or later.
-    - Accurately understand existing class names, method names, and public API signatures, and integrate new code without naming discrepancies (typos or mismatches).
-    - Output in JSON array format, including new or modified files (specify the same file path if overwriting an existing file).
-    - The output must be a pure JSON array only.
+[Output JSON Schema]
+{
+  "summaryOfChanges": "Description of what needs to be done",
+  "targetFiles": [
+    {
+      "path": "Assets/Scripts/Example.cs",
+      "action": "modify", // or "create"
+      "reason": "Why this file needs to be changed",
+      "plannedMethods": ["void NewMethod()"]
+    }
+  ]
+}
+`;
 
-    [Strict Rules]
-    1. The output MUST be a valid, syntax-error-free **pure JSON array only**.
-    2. Do NOT output Markdown code blocks (such as \`\`\`json) or any greetings/explanations before or after.
-    3. Newlines and tabs inside the "content" field values (C# code) must be escaped as \\n or \\t. **Do NOT include raw unescaped newlines that violate JSON syntax rules.**
-
-    [Output Format Example]
-    [
-      {
-        "path": "Assets/Scripts/PlayerController.cs",
-        "content": "using UnityEngine;\\n\\npublic class PlayerController : MonoBehaviour\\n{\\n    void Start() {}\\n}"
-      }
-    ]
-    `;
-
+    // 3. プランナーAIの呼び出し
     const response = await ai.models.generateContent({
-      model: env.GEMINI_MODEL || "gemini-2.5-flash", // プロジェクトに合わせて変更してください
-      contents: prompt,
+      model: process.env.GEMINI_MODEL || "gemini-3.5-flash", // または適切なモデル
+      contents: plannerPrompt,
       config: {
         responseMimeType: "application/json",
       },
@@ -123,26 +103,106 @@ export async function POST(
       .trim();
 
     if (!responseText) {
-      throw new Error("Geminiからの応答が空でした。");
+      throw new Error("プランナーAIからの応答が空でした。");
     }
 
-    const newFiles = JSON.parse(responseText);
+    const changePlan = JSON.parse(responseText);
 
+    // 4. ここから先で、この "changePlan" を次の「コーダーAI」へ引き渡す
+    // （次は計画書に載っているファイルだけをコードベースからピンポイントで取得して書かせるフローに繋げます）
+
+    // 2. changePlanの targetFiles に基づき、変更が必要な既存コードだけをGitHubからピンポイントで取得
+    const targetFileContents: { path: string; content: string }[] = [];
+
+    for (const fileTarget of changePlan.targetFiles) {
+      if (fileTarget.action === "modify") {
+        try {
+          const { data: fileData } = await octokit.rest.repos.getContent({
+            owner,
+            repo: repoName,
+            path: fileTarget.path,
+            ref: defaultBranch,
+          });
+          if ("content" in fileData) {
+            const content = Buffer.from(fileData.content, "base64").toString(
+              "utf-8",
+            );
+            targetFileContents.push({ path: fileTarget.path, content });
+          }
+        } catch (e) {
+          // ファイルが存在しなかった場合のフォールバック（新規扱いにするなど）
+          targetFileContents.push({
+            path: fileTarget.path,
+            content: "// 新規作成ファイル",
+          });
+        }
+      } else {
+        targetFileContents.push({
+          path: fileTarget.path,
+          content: "// 新規作成ファイル",
+        });
+      }
+    }
+
+    // 3. コーダーAIのプロンプト作成
+    const coderPrompt = `
+You are an expert Unity/C# Coder.
+Based on the architectural Change Plan and the existing file contents below, write the actual C# code for the target files.
+
+[Change Plan]
+${JSON.stringify(changePlan, null, 2)}
+
+[Target Files Existing Code]
+${targetFileContents.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\n\n")}
+
+[Instructions]
+- Target Unity 6 (Unity 6000).
+- Strictly follow the Change Plan. Implement required public methods without naming mismatches.
+- Output a pure JSON array containing ALL files to be committed, including the updated C# code, AND a newly updated "project-manifest.json" and "README.md".
+- Do NOT output Markdown code blocks (like \`\`\`json).
+- JSON format example:
+[
+  { "path": "Assets/Scripts/Example.cs", "content": "using UnityEngine;\\n..." },
+  { "path": "project-manifest.json", "content": "{ ...updated manifest json... }" },
+  { "path": "README.md", "content": "# Updated Project README..." }
+]
+`;
+
+    // 4. コーダーAIの呼び出し
+    const coderResponse = await ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || "gemini-3.5-flash",
+      contents: coderPrompt,
+      config: {
+        responseMimeType: "application/json",
+      },
+    });
+
+    let coderResponseText = coderResponse.text || "";
+    coderResponseText = coderResponseText
+      ?.replace(/```json\s*/g, "")
+      .replace(/```\s*/g, "")
+      .trim();
+
+    const filesToCommit = JSON.parse(coderResponseText);
+
+    // 5. GitHubへまとめてプッシュ（既存の createRepoAndPush などを流用）
     await createRepoAndPush({
       repoName,
-      description: `Update by UnityCraft AI - Continue execution with codebase context`,
+      description: `Update by UnityCraft AI: ${changePlan.summaryOfChanges}`,
       projectId,
-      files: newFiles,
+      files: filesToCommit, // C#コード + 最新の project-manifest.json + README.md
     });
 
     return NextResponse.json({
       success: true,
-      message: "既存コードを考慮したAIによる実装とプッシュが完了しました！",
+      message:
+        "プラン策定、コーディング、およびマニフェストの自己更新・プッシュが完了しました！",
+      changePlan,
     });
   } catch (error: any) {
-    console.error("Continue execution error:", error);
+    console.error("Planner error:", error);
     return NextResponse.json(
-      { error: error.message || "サーバーエラーが発生しました" },
+      { error: error.message || "プラン作成中にサーバーエラーが発生しました" },
       { status: 500 },
     );
   }

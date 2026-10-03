@@ -36,7 +36,9 @@ export default function ProjectPage() {
   const [activeFile, setActiveFile] = useState(0);
 
   const router = useRouter();
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(
+    "Feel free to come up with wild ideas or suggestions for fixing the game!",
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,7 +116,7 @@ export default function ProjectPage() {
       const res = await fetch(`/api/projects/${id}/continue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, userPrompt: prompt }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "送信に失敗しました。");

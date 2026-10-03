@@ -62,15 +62,17 @@ export interface ManifestObject {
 }
 
 export interface SceneInfo {
+  sceneName: string;
   path: string;
-  objects: ManifestObject[];
+  description: string; // 例: "タイトル画面、UIとメインコントローラーを配置"
+  keyObjects: string[]; // 主要なオブジェクト名のリスト（例: ["GameManager", "Player"]）
 }
 
 export interface ScriptInfo {
   path: string;
-  responsibility: string;
-  public_methods: string[]; // 例: "public void Move(Vector2 input)"
-  dependencies: string[]; // 依存する他のクラス名など
+  responsibility: string; // クラスの役割
+  public_methods: string[]; // 例: ["public void TakeDamage(int dmg)"]
+  dependencies: string[]; // 依存する他のクラス名
 }
 
 export interface ProjectManifest {
@@ -79,5 +81,16 @@ export interface ProjectManifest {
   description: string;
   scenes: SceneInfo[];
   scripts: ScriptInfo[];
-  updatedAt: string; // ISO 8601形式のタイムスタンプ
+  // ▼ 追加：人間やUnityエディター側での手動作業・注意点
+  humanSetupInstructions: string[];
+  updatedAt: string; // ISO 8601形式
+}
+export interface ChangePlan {
+  summaryOfChanges: string; // 今回の変更の概要
+  targetFiles: {
+    path: string; // 変更または新規作成するファイルのパス（例: Assets/Scripts/GameManager.cs）
+    action: "create" | "modify"; // 新規作成か修正か
+    reason: string; // なぜこのファイルをどう変更するかの理由
+    plannedMethods: string[]; // 追加・修正される主要な public_methods のシグネチャ一覧
+  }[];
 }
