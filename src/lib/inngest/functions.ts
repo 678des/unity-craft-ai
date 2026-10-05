@@ -2,7 +2,7 @@ import { inngest } from "./client";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { planProject, generateScript, generateReadme } from "@/lib/gemini";
 import { createRepoAndPush } from "@/lib/github/createRepo";
-import { generateInitialManifest } from "../github/manifest";
+//import { generateInitialManifest } from "../github/manifest";
 import type { GeneratedFile, ProjectPlan, ProjectStatus } from "@/lib/types";
 
 async function setStatus(
@@ -90,10 +90,10 @@ export const generateUnityProject = inngest.createFunction(
       generated.push({ path: file.path, content });
     }
     // 2. 基本ドキュメント & Git設定（UserSettings や packages-lock.json も確実に除外）
-    generated.push({
-      path: "manifest.json",
-      content: generateInitialManifest(plan.repo_name, plan.game_concept),
-    });
+    // generated.push({
+    //   path: "manifest.json",
+    //   content: generateInitialManifest(plan.repo_name, plan.game_concept),
+    // });
     generated.push({
       path: "SETUP.md",
       content: generateReadme(plan),

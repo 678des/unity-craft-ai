@@ -70,6 +70,7 @@ ${userPrompt}
 1. Do NOT write actual C# code yet. Your output must be a structural change plan.
 2. Determine which files need to be modified or newly created.
 3. Keep track of existing method signatures and dependencies so that no naming mismatches occur.
+★【CRITICAL SAFETY RULE】: You MUST NOT invent new public methods for existing classes unless absolutely necessary. If a target file already exists in the manifest, you must reuse its existing public_methods or explicitly declare the exact signature that matches its responsibility. Do NOT guess method names.
 4. Output must be a valid, syntax-error-free **pure JSON object only** following the schema below.
 5. Do NOT output Markdown code blocks (like \`\`\`json) or any extra text.
 
@@ -97,6 +98,7 @@ ${userPrompt}
     });
 
     let responseText = response.text;
+    console.log("Planner AI response:", responseText);
     responseText = responseText
       ?.replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
@@ -147,7 +149,15 @@ ${userPrompt}
     // 3. コーダーAIのプロンプト作成
     const coderPrompt = `
 You are an expert Unity/C# Coder.
-Based on the architectural Change Plan and the existing file contents below, write the actual C# code for the target files.
+Based on the architectural Change Plan, the current Project Manifest, and the existing file contents below, write the actual C# code for the target files.
+
+【CRITICAL RULES TO PREVENT METHOD MISMATCHES】
+- Do NOT invent or hallucinate methods. You MUST NOT call or implement public methods that do not exist in the project.
+- If you need to call a method from another class (e.g., GameManager, SoundManager), you MUST verify its existence from the [Project Manifest] or [Target Files Existing Code] below.
+- If a required method does not exist anywhere, you must explicitly define it in the target class and ensure its signature matches the Change Plan.
+
+[Project Manifest (System API Map)]
+${JSON.stringify(manifestContent, null, 2)}
 
 [Change Plan]
 ${JSON.stringify(changePlan, null, 2)}
@@ -157,14 +167,12 @@ ${targetFileContents.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\
 
 [Instructions]
 - Target Unity 6 (Unity 6000).
-- Strictly follow the Change Plan. Implement required public methods without naming mismatches.
-- Output a pure JSON array containing ALL files to be committed, including the updated C# code, AND a newly updated "project-manifest.json" and "README.md".
+- Output a pure JSON array containing ALL files to be committed, including the updated C# code.
 - Do NOT output Markdown code blocks (like \`\`\`json).
 - JSON format example:
 [
   { "path": "Assets/Scripts/Example.cs", "content": "using UnityEngine;\\n..." },
-  { "path": "project-manifest.json", "content": "{ ...updated manifest json... }" },
-  { "path": "README.md", "content": "# Updated Project README..." }
+  { "path": "Assets/Scripts/NewScript.cs", "content": "using UnityEngine;\\n..." }
 ]
 `;
 
@@ -183,7 +191,20 @@ ${targetFileContents.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\
       .replace(/```\s*/g, "")
       .trim();
 
+    // ```json から ``` までのブロックで囲まれている場合、中のJSONだけを抽出
+    const jsonBlockMatch = coderResponseText.match(
+      /```(?:json)?\s*([\s\S]*?)\s*```/,
+    );
+    if (jsonBlockMatch && jsonBlockMatch[1]) {
+      coderResponseText = jsonBlockMatch[1].trim();
+    }
+
     const filesToCommit = JSON.parse(coderResponseText);
+
+    console.log(
+      "Files to commit:",
+      filesToCommit.map((f: any) => f.path),
+    );
 
     // 5. GitHubへまとめてプッシュ（既存の createRepoAndPush などを流用）
     await createRepoAndPush({

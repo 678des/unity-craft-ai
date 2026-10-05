@@ -37,7 +37,7 @@ export default function ProjectPage() {
 
   const router = useRouter();
   const [prompt, setPrompt] = useState(
-    "Feel free to come up with wild ideas or suggestions for fixing the game!",
+    "Act as a mad genius game designer. Invent something completely chaotic yet miraculously functional.",
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +132,7 @@ export default function ProjectPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${id}/update-manifest`, {
+      const res = await fetch(`/api/projects/${id}/all-update-manifest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -144,9 +144,11 @@ export default function ProjectPage() {
       if (!res.ok)
         throw new Error(data.error ?? "マニフェスト更新に失敗しました。");
       console.log("Manifest updated:", data.manifest);
+      setSubmitting(false);
       router.push(`/projects/${id}`);
     } catch (e) {
       console.error("Manifest update failed:", e);
+      setSubmitting(false);
     }
   }
 
