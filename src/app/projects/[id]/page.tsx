@@ -36,9 +36,7 @@ export default function ProjectPage() {
   const [activeFile, setActiveFile] = useState(0);
 
   const router = useRouter();
-  const [prompt, setPrompt] = useState(
-    "Act as a mad genius game designer. Invent something completely chaotic yet miraculously functional.",
-  );
+  const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,24 +140,45 @@ export default function ProjectPage() {
   return (
     <div className="space-y-8">
       <div>
-        <div className="flex flex-wrap items-center gap-3">
+        {/* <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={project.status} />
-        </div>
+        </div> */}
         <p className="mt-4 max-w-2xl whitespace-pre-wrap text-lg leading-relaxed">
           {project.prompt}
         </p>
       </div>
 
-      <Button size="lg" onClick={submit} disabled={submitting}>
-        {submitting ? (
-          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-        ) : (
-          <Sparkles className="h-5 w-5" aria-hidden />
+      <div className="mt-8">
+        <label htmlFor="prompt" className="mb-2 block text-sm font-semibold">
+          ゲームの内容
+        </label>
+        <textarea
+          id="prompt"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={5}
+          maxLength={2000}
+          placeholder="例:敵を爆発させる処理がほしい"
+          className="w-full rounded-md border border-line bg-white p-4 text-base leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        />
+        {error && (
+          <p role="alert" className="mt-2 text-sm font-semibold text-red-700">
+            {error}
+          </p>
         )}
-        {submitting ? "送信中..." : "続きを作る"}
-      </Button>
+        <div className="mt-4">
+          <Button size="lg" onClick={submit} disabled={submitting}>
+            {submitting ? (
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="h-5 w-5" aria-hidden />
+            )}
+            {submitting ? "送信中..." : "続きを作る"}
+          </Button>
+        </div>
+      </div>
 
-      {project.status === "failed" && project.error_message && (
+      {/* {project.status === "failed" && project.error_message && (
         <div
           role="alert"
           className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900"
@@ -167,8 +186,8 @@ export default function ProjectPage() {
           <p className="font-semibold">生成に失敗しました</p>
           <p className="mt-1 break-words">{project.error_message}</p>
         </div>
-      )}
-
+      )} */}
+      {/* 
       {project.status === "completed" && project.github_repo_url && (
         <a
           href={project.github_repo_url}
@@ -179,9 +198,9 @@ export default function ProjectPage() {
           GitHubで開く
           <ExternalLink className="h-5 w-5" aria-hidden />
         </a>
-      )}
+      )} */}
 
-      <section aria-labelledby="log-heading">
+      {/* <section aria-labelledby="log-heading">
         <h2 id="log-heading" className="mb-2 text-sm font-semibold text-muted">
           実行ログ
         </h2>
@@ -208,9 +227,9 @@ export default function ProjectPage() {
             ))
           )}
         </div>
-      </section>
+      </section> */}
 
-      {files.length > 0 && current && (
+      {/* {files.length > 0 && current && (
         <section aria-labelledby="files-heading">
           <h2
             id="files-heading"
@@ -248,7 +267,7 @@ export default function ProjectPage() {
             <code>{current.content}</code>
           </pre>
         </section>
-      )}
+      )} */}
     </div>
   );
 }

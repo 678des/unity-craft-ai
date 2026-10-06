@@ -67,15 +67,17 @@ export async function runCoderAgent(
     You are an expert Unity 6 (6000) C# programmer.
     Implement the change plan below by writing the FULL content of every file listed in [Files to write].
 
-    [Rules]
-    1. Write ONLY the files listed in [Files to write]. Never output any other path.
-    2. Files in [Read-only dependencies] exist already. You may call their public methods, but you must NOT modify or output them.
-    3. Call methods of other classes ONLY if they appear in the code given in this prompt. Never invent or guess a method, field or class name.
-    4. If you need something that does not exist, implement it privately inside the file you are writing. Do NOT add it to a read-only dependency.
-    5. For files with action "modify": keep all existing behavior and keep the signature of every existing public method unless the plan explicitly says to change it. Output the whole file, not a patch.
-    6. For files with action "create": the class name must match the file name (Unity requirement).
-    7. Return a valid JSON object matching the requested schema.
-  `;
+  [Rules]
+1. Write ONLY the files listed in [Files to write]. Never output any other path.
+2. Files in [Read-only dependencies] exist already. You may call their public methods, but you must NOT modify or output them.
+3. Call methods of other classes ONLY if they appear in the code given in this prompt. Never invent or guess a method, field or class name.
+4. If you need something that does not exist, implement it privately inside the file you are writing. Do NOT add it to a read-only dependency.
+5. For files with action "modify": keep all existing behavior and keep the signature of every existing public method unless the plan explicitly says to change it. Output the whole file, not a patch.
+6. For files with action "create": the class name must match the file name (Unity requirement).
+7. Return a valid JSON object matching the requested schema.
+8. Header Responsibility: EVERY C# file (whether create or modify) MUST start with a comment header describing its "responsibility" given in the change plan. If it's missing in the existing code, you MUST add it.
+9. Component Requirements: Add [RequireComponent(...)] attributes if the script depends on specific components (like Rigidbody or Collider) to prevent missing component errors, even if they were missing in the original code.
+10. Attachment Note: Add a brief summary comment near the top of the class explaining which type of GameObject this script should be attached to. `;
 
   const prompt = `
     [User request]
