@@ -136,3 +136,17 @@ export async function runCoderAgent(
 
   return JSON.parse(response.text) as CoderResponse;
 }
+
+//return で返される例
+// {
+//   "files": [
+//     {
+//       "path": "Assets/Scripts/EnemyController.cs",
+//       "content": "using UnityEngine;\n\npublic class EnemyController : MonoBehaviour\n{\n    public float speed = 3.5f;\n    private Transform player;\n\n    void Start()\n    {\n        GameObject playerObj = GameObject.FindWithTag(\"Player\");\n        if (playerObj != null)\n        {\n            player = playerObj.transform;\n        }\n    }\n\n    void Update()\n    {\n        if (player != null)\n        {\n            Vector3 direction = (player.position - transform.position).normalized;\n            transform.position += direction * speed * Time.deltaTime;\n        }\n    }\n}"
+//     },
+//     {
+//       "path": "Assets/Scripts/GameManager.cs",
+//       "content": "using UnityEngine;\n\npublic class GameManager : MonoBehaviour\n{\n    public int score = 0;\n\n    public void AddScore(int amount)\n    {\n        score += amount;\n        Debug.Log(\"Current Score: \" + score);\n    }\n\n    // 敵撃破時に呼ばれるスコア加算の拡張メソッド\n    public void AddScoreForEnemyKill()\n    {\n        AddScore(100);\n    }\n}"
+//     }
+//   ]
+// }
