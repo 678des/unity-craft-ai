@@ -1,0 +1,15 @@
+{
+  "files": [
+    {
+      "path": "Assets/Scripts/EnemyController.cs",
+      "action": "create",
+      "reason": "敵の移動と体力を持つ新規クラス"
+    },
+
+    {
+      "path": "Assets/Scripts/GameManager.cs",
+      "action": "modify",
+      "reason": "敵撃破時のスコア加算を接続"
+    }
+  ]
+}
