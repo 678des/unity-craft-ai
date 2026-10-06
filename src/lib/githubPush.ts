@@ -21,7 +21,7 @@ export async function pushFilesToGitHub(
   params: PushToGitHubParams,
 ): Promise<string> {
   const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN, // GitHub Personal Access Token (Repo権限が必要)
+    auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN, // GitHub Personal Access Token (Repo権限が必要)
   });
 
   const owner = params.owner;

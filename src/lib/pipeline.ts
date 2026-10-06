@@ -17,10 +17,10 @@ export async function ExecuteUpdatePlan(
     .select("github_repo_name, user_id") // またはオーナー名を持つカラム
     .eq("id", projectId)
     .single();
-  const repo = project?.github_repo_name; // 例: "unitycraft-some-game"
+  const repo = project?.github_repo_name || "simple-3d-coin-pusher"; // 例: "unitycraft-some-game"
   const owner = process.env.GITHUB_OWNER || "your-github-username-or-org"; // 環境変数やユーザー情報から取得
   const githubToken = process.env.GITHUB_PERSONAL_ACCESS_TOKEN; // 環境変数から取得
-
+  console.log(repo, owner, githubToken);
   if (!repo || !owner || !githubToken) {
     throw new Error("GitHubリポジトリ情報が不足しています。");
   }
