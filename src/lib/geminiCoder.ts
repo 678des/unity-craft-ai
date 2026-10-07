@@ -96,7 +96,7 @@ export async function runCoderAgent(
   const response = await ai.models.generateContent({
     model: process.env.GEMINI_MODEL || "gemini-2.5-flash", // 高速かつコード生成能力に優れたモデル
     contents: [
-      { role: "system", parts: [{ text: systemInstruction }] },
+      { role: "model", parts: [{ text: systemInstruction }] },
       { role: "user", parts: [{ text: prompt }] },
     ],
     config: {

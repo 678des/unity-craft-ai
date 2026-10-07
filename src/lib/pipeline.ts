@@ -14,10 +14,11 @@ export async function ExecuteUpdatePlan(
   //1 CSスクリプトを取得
   const { data: project, error } = await getAdminClient()
     .from("projects")
-    .select("github_repo_name, user_id") // またはオーナー名を持つカラム
+    .select("github_repo_name") // またはオーナー名を持つカラム
     .eq("id", projectId)
     .single();
-  const repo = project?.github_repo_name || "simple-3d-coin-pusher"; // 例: "unitycraft-some-game"
+  console.log(projectId, project, error);
+  const repo = project?.github_repo_name; // 例: "unitycraft-some-game"
   const owner = process.env.GITHUB_OWNER || "your-github-username-or-org"; // 環境変数やユーザー情報から取得
   const githubToken = process.env.GITHUB_PERSONAL_ACCESS_TOKEN; // 環境変数から取得
   console.log(repo, owner, githubToken);
@@ -48,13 +49,26 @@ export async function ExecuteUpdatePlan(
   //5 コーダーAI：要望 ＋ JSON ＋ ファイル全文から、pathと全コードを返してもらう
   const coderResponse = await runCoderAgent(architectContext);
   console.log("★5", coderResponse);
+  // 【追加】コーダーAIが返したコード内のエスケープされた改行を、実際の改行に確実に置換する
+  const formattedFiles = coderResponse.files.map((file) => {
+    // 文字列としての "\\n" が含まれている場合に備えて確実に改行に変換
+    const unescapedContent = file.content
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t");
+
+    return {
+      path: file.path,
+      content: unescapedContent,
+    };
+  });
   //6 githubにpush
   const commitSha = await pushFilesToGitHub({
     owner: owner,
     repo: repo,
     branch: "main",
     commitMessage: `feat: ${userPrompt} (by UnityCraft AI)`, // コミットメッセージ
-    files: coderResponse.files, // コーダーAIが返したファイル配列をそのまま渡す
+    files: formattedFiles, // コーダーAIが返したファイル配列をそのまま渡す
   });
   console.log("★6", commitSha);
 }
